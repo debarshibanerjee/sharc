@@ -1,5 +1,5 @@
-character(len=500), parameter :: build_date="Wed Apr 12 10:39:06 CEST 2023"
-character(len=500), parameter :: build_host="manganese.itc.univie.ac.at"
-character(len=500), parameter :: build_dir="/global/mai/SHARC_3.0_tests/install/sharc/source"
+character(len=500), parameter :: build_date="Sun Sep  3 06:59:19 PM CEST 2023"
+character(len=500), parameter :: build_host="mula"
+character(len=500), parameter :: build_dir="/media/users/debarshi/scratch/sharc/source"
 character(len=500), parameter :: build_compiler="/usr/bin/gfortran"
 character(len=500), parameter :: use_pysharc="true"
