@@ -2062,9 +2062,9 @@ def readQMin(QMinfilename):
     if os.environ.get('NSLOTS') is not None:
         QMin['ncpu'] = int(os.environ.get('NSLOTS'))
         print('Detected $NSLOTS variable. Will use ncpu=%i' % (QMin['ncpu']))
-    elif os.environ.get('SLURM_NTASKS_PER_NODE') is not None:
-        QMin['ncpu'] = int(os.environ.get('SLURM_NTASKS_PER_NODE'))
-        print('Detected $SLURM_NTASKS_PER_NODE variable. Will use ncpu=%i' % (QMin['ncpu']))
+    elif os.environ.get('MY_SLURM_NTASKS_PER_NODE') is not None:
+        QMin['ncpu'] = int(os.environ.get('MY_SLURM_NTASKS_PER_NODE'))
+        print('Detected $MY_SLURM_NTASKS_PER_NODE variable. Will use ncpu=%i' % (QMin['ncpu']))
     QMin['ncpu'] = max(1, QMin['ncpu'])
 
     QMin['delay'] = 0.0
