@@ -1380,6 +1380,9 @@ def execute_tinker(QMin, ff_file_path):
     filename = os.path.join(WORKDIR, 'TINKER.key')
     writefile(filename, string)
 
+    # GDM: Overwrite TINKER.KEY file with my own version to make the 3-shell partitions
+    overwrite = os.path.join(os.getcwd(), 'TINKER.key')
+    shutil.copyfile(overwrite,filename)
 
     # xyz/type/connection file
     string = '%i\n' % (len(QMMM['MM_coords']))
@@ -1442,6 +1445,26 @@ def execute_tinker(QMin, ff_file_path):
             QMMM['MMGradient'][iatom_input] = grad
         if 'MMq' in line:
             break
+
+    # GDM: this fix the problem with atoms fixed
+    nMove = len(QMMM['MMGradient'].keys())
+    nTota = QMMM['natom_table']
+    QMMM['three_layer']={
+            "total_qmmm_atoms": nTota,
+            "move_qmmm_atoms": nMove,
+            "total_qm_atoms": len(QMMM['QM_atoms'])
+            }
+    if nTota != nMove:
+        if nTota > nMove:
+            print("GDM: Setting gradient MM to zero to fixed atoms")
+            for i in range(nMove,nTota):
+                iatom_input = i
+                grad = [0.0,0.0,0.0]
+                QMMM['MMGradient'][iatom_input] = grad
+        else:
+            print("GDM: Total atoms of the QMMM system is less than atoms allow to move....")
+            exit(20)
+    #################################################
 
     # get MM point charges
     print('Searching MMpc_raw ...         ', datetime.datetime.now())
@@ -3328,6 +3351,7 @@ def moveOldFiles(QMin):
     basenames = ['ORCA.gbw', 'ORCA.molden']
     if 'nooverlap' not in QMin:
         basenames.append('mos')
+
     for job in QMin['joblist']:
         for base in basenames:
             fromfile = os.path.join(QMin['savedir'], '%s.%i' % (base, job))
@@ -3847,9 +3871,9 @@ def format_ci_vectors(ci_vectors):
                 string += 'd'
         for istate in range(len(ci_vectors)):
             if det in ci_vectors[istate]:
-                string += ' %15.11f ' % ci_vectors[istate][det]
+                string += ' %11.7f ' % ci_vectors[istate][det]
             else:
-                string += ' %15.11f ' % 0.
+                string += ' %11.7f ' % 0.
         string += '\n'
     return string
 
@@ -4519,7 +4543,9 @@ def getQMout(QMin):
             gsmult = QMin['jobs'][int(path.split('_')[1])]['mults'][0]
             restr = QMin['jobs'][int(path.split('_')[1])]['restr']
             if isgs:
-                fname = '.ground'
+                # GDM: edit this for ground state
+                #fname = '.ground'
+                fname = ''
                 if QMin['states'][gsmult - 1] == 1:
                     fname = ''
             else:
@@ -4531,11 +4557,21 @@ def getQMout(QMin):
             g = getgrad(logfile, QMin)
             # print g
             if QMin['qmmm']:
-                # TODO: seems ORCA.pcgrad.ground is not written in ORCA 5 
-                if 'ground' in fname:
-                    fname = ''
                 logfile = os.path.join(QMin['scratchdir'], path, 'ORCA.pcgrad' + fname)
                 gpc = getpcgrad(logfile, QMin)
+
+                # GDM: Fix to set to zero the gradients of the MM fixed atoms
+                move_mm_atoms = QMin['qmmm']['three_layer']['move_qmmm_atoms'] - QMin['qmmm']['three_layer']['total_qm_atoms']
+                ntota = len(gpc)
+
+                if (move_mm_atoms != ntota):
+                    print("GDM: Setting to zero gradients on MM fixed atoms from QM calc.")
+                    if (move_mm_atoms > ntota):
+                        print("GDM: Move MM atoms are more than total MM atoms...")
+                        exit(21)
+                    for i in range(move_mm_atoms,ntota):
+                        gpc[i][0] = gpc[i][1] = gpc[i][2] = 0.0
+                ###########################################
             for istate in QMin['statemap']:
                 state = QMin['statemap'][istate]
                 # print grad,istate,state
