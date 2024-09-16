@@ -2178,7 +2178,6 @@ def readQMin(QMinfilename):
         else:
             os.environ['PYTHONPATH'] = os.path.join(QMin['theodir'], 'lib') + os.pathsep + QMin['theodir']
 
-
     # neglected gradients
     QMin['neglected_gradient'] = 'zero'
     if 'grad' in QMin:
@@ -2203,7 +2202,8 @@ def readQMin(QMinfilename):
              'unrestricted_triplets': False,
              'qmmm': False,
              'cobramm': False,
-             'picture_change': False
+             'picture_change': False,
+             'dotrans': False
              }
     strings = {'basis': '6-31G',
                'auxbasis': '',
@@ -2399,6 +2399,9 @@ def readQMin(QMinfilename):
         if len(QMin['states']) >= 3 and QMin['states'][2] > 0:
             print('Request "SOC" is not compatible with "unrestricted_triplets"!')
             sys.exit(64)
+    if QMin['template']['dotrans'] and 'soc' in QMin:
+        print('dotrans and SOC not compatible (in ORCA 5).')
+        sys.exit(64)
     # if QMin['template']['cosmo'] and 'grad' in QMin: TODO
         # print('COSMO is not compatible with gradient calculations!')
         # sys.exit(65)
@@ -3199,7 +3202,8 @@ def ORCAinput_string(QMin):
         if restr and 'soc' in QMin:
             string += 'dosoc true\n'
             string += 'printlevel 3\n'
-        # string+="dotrans all\n" #TODO
+        if 'dm' in QMin and QMin['template']['dotrans']: 
+            string+="dotrans all\n" #TODO
         if dograd:
             if multigrad:
                 if singgrad:
@@ -4214,7 +4218,23 @@ def setupWORKDIR_TH(WORKDIR, QMin):
     # mkdir the WORKDIR, or clean it if it exists, then copy all necessary files from pwd and savedir
 
     # write dens_ana.in
-    inputstring = '''rtype='cclib'
+    if os.path.isfile(os.path.join(QMin['theodir'],'bin','theodore')):
+        inputstring = '''rtype='orca'
+rfile='ORCA.log'
+mo_file='ORCA.molden.input'
+read_binary=True
+jmol_orbitals=False
+molden_orbitals=False
+Om_formula=2
+eh_pop=1
+comp_ntos=True
+print_OmFrag=True
+output_file='tden_summ.txt'
+prop_list=%s
+at_lists=%s
+''' % (str(QMin['template']['theodore_prop']), str(QMin['template']['theodore_fragment']))
+    else:
+        inputstring = '''rtype='cclib'
 rfile='ORCA.log'
 read_binary=True
 jmol_orbitals=False
@@ -4247,7 +4267,10 @@ at_lists=%s
 def runTHEODORE(WORKDIR, THEODIR):
     prevdir = os.getcwd()
     os.chdir(WORKDIR)
-    string = os.path.join(THEODIR, 'bin', 'analyze_tden.py')
+    if os.path.isfile(os.path.join(THEODIR,'bin','theodore')):
+        string = os.path.join(THEODIR, 'bin', 'theodore analyze_tden')
+    else:
+        string = os.path.join(THEODIR, 'bin', 'analyze_tden.py')
     stdoutfile = open(os.path.join(WORKDIR, 'theodore.out'), 'w')
     stderrfile = open(os.path.join(WORKDIR, 'theodore.err'), 'w')
     if PRINT or DEBUG:
@@ -4266,6 +4289,8 @@ def runTHEODORE(WORKDIR, THEODIR):
         sys.stdout.write('FINISH:\t%s\t%s\tRuntime: %s\tError Code: %i\n' % (shorten_DIR(WORKDIR), endtime, endtime - starttime, runerror))
         sys.stdout.flush()
     os.chdir(prevdir)
+    if runerror >0 and os.path.isfile(os.path.join(THEODIR,'bin','theodore')): 
+        sys.stdout.write('Error code is not 0 for TheoDORE 3.x. Please make sure to use at least TheoDORE 3.2 with SHARC_ORCA.py. ') 
     return runerror
 
 # =============================================================================================== #
@@ -4501,6 +4526,8 @@ def getQMout(QMin):
         for job in joblist:
             logfile = os.path.join(QMin['scratchdir'], 'master_%i/ORCA.log' % (job))
             dipoles = gettdm(logfile, job, QMin)
+            if QMin['template']['dotrans']:
+                tdms = get_e2e_tdm(logfile, job, QMin)
             mults = QMin['multmap'][-job]
             if 3 in mults and QMin['OrcaVersion'] < (4, 1):
                 mults = [3]
@@ -4535,6 +4562,16 @@ def getQMout(QMin):
                     elif s2 == 1:
                         for ixyz in range(3):
                             QMout['dm'][ixyz][i][j] = dipoles[(m1, s1)][ixyz]
+                    elif QMin['template']['dotrans'] and m1 == m2 == 1:
+                        if (i,j) in tdms:
+                            for ixyz in range(3):
+                                QMout['dm'][ixyz][i][j] = tdms[(i, j)][ixyz]
+                                QMout['dm'][ixyz][j][i] = tdms[(i, j)][ixyz]
+                        elif (j,i) in tdms:
+                            for ixyz in range(3):
+                                QMout['dm'][ixyz][i][j] = tdms[(j, i)][ixyz]
+                                QMout['dm'][ixyz][j][i] = tdms[(j, i)][ixyz]
+                            
 
 
     # Gradients
@@ -4966,6 +5003,75 @@ def gettdm(logfile, ijob, QMin):
                         dipoles[(imult, istate + 1 + (gsmult == imult))] = dm
     # print dipoles
     return dipoles
+
+# ======================================================================= #
+
+def get_e2e_tdm(logfile, ijob, QMin):
+
+    # open file
+    f = readfile(logfile)
+    if PRINT:
+        print('e2e Dipoles:  ' + shorten_DIR(logfile))
+
+    # figure out the excited state settings
+    mults = QMin['jobs'][ijob]['mults']
+    if not 1 in mults:
+        return {}
+    restr = QMin['jobs'][ijob]['restr']
+    gsmult = mults[0]
+    estates_to_extract = deepcopy(QMin['states'])
+    estates_to_extract[gsmult - 1] -= 1
+    for imult in range(len(estates_to_extract)):
+        if not imult + 1 in mults:
+            estates_to_extract[imult] = 0
+
+
+    dipoles = {}
+    for imult in mults:
+        if not imult == gsmult:
+            continue
+        nstates = estates_to_extract[imult - 1]
+        if nstates == 0:
+            continue
+        iline = 0
+        while True:
+            line = f[iline]
+            if 'TRANSIENT TD-DFT/TDA-EXCITATION SPECTRA' in line:
+                break
+            iline += 1
+
+        for istate in range(1,nstates):
+            while True:
+                iline += 1
+                line = f[iline]
+                if 'Transitions starting from IROOT' in line:
+                    state = int(line.replace(':','').split()[-1])
+                    print(iline,state)
+                    if state == istate:
+                        break 
+            for jstate in range(1+istate,1+nstates):
+                line = f[iline+7-istate+jstate]
+                #print(line)
+                dm = [ float(i) for i in line.split()[5:8] ]
+                dipoles[ (istate,jstate) ] = dm
+
+    #print(dipoles)
+#            for iline, line in enumerate(f):
+#                if '  ABSORPTION SPECTRUM VIA TRANSITION ELECTRIC DIPOLE MOMENTS' in line:
+#                    # print line
+#                    for istate in range(nstates):
+#                        shift = 5 + istate
+#                        s = f[iline + shift].split()
+#                        dm = [float(i) for i in s[5:8]]
+#                        dipoles[(imult, istate + 1 + (gsmult == imult))] = dm
+    # print dipoles
+    return dipoles
+
+
+
+
+
+
 
 # ======================================================================= #
 
