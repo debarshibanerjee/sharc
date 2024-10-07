@@ -99,14 +99,14 @@ else ifeq ($(USE_COMPILER), intel)
   LD=  -Wl,--start-group ${MKLROOT}/lib/intel64/libmkl_intel_lp64.a ${MKLROOT}/lib/intel64/libmkl_sequential.a ${MKLROOT}/lib/intel64/libmkl_core.a -Wl,--end-group -lpthread -lm -ldl
 endif
 else ifeq ($(USE_LIBS), gnu)
-  LD= -llapack -lfftw3 -lblas -lgfortran  -static $(NETCDF_LIB)
+  LD= -lscalapack -lfftw3 -lopenblas -lgfortran  -static $(NETCDF_LIB)
 endif
 else 
 ifeq ($(USE_LIBS), mkl)
   LD= -L$(MKLROOT)/lib/intel64 -lmkl_rt -lpthread -lm -lgfortran $(NETCDF_LIB)
 #   LD= -L$(MKLROOT)/lib/intel64 -lmkl_intel_lp64 -lmkl_core -lmkl_sequential -lpthread -lm -lgfortran $(NETCDF_LIB)
 else ifeq ($(USE_LIBS), gnu)
-  LD= -llapack -lfftw3 -lblas -lgfortran   $(NETCDF_LIB)
+  LD= -lscalapack -lfftw3 -lopenblas -lgfortran   $(NETCDF_LIB)
 endif
 endif
 
